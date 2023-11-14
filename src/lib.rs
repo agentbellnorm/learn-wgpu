@@ -1,4 +1,5 @@
 use log::logger;
+use uniforms::Uniforms;
 use wgpu::{util::DeviceExt, PrimitiveTopology};
 use winit::{
     event::*,
@@ -9,6 +10,8 @@ use winit::{
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+
+mod uniforms;
 
 struct State {
     surface: wgpu::Surface,
@@ -22,13 +25,16 @@ struct State {
     index_buffer: wgpu::Buffer,
     num_vertices: u32,
     num_indices: u32,
+    uniforms: Uniforms,
+    uniforms_buffer: wgpu::Buffer,
+    uniforms_bind_group: wgpu::BindGroup,
 }
+
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
-    // color: [f32; 3],
 }
 
 impl Vertex {
@@ -42,11 +48,6 @@ impl Vertex {
                     shader_location: 0,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-                // wgpu::VertexAttribute {
-                //     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                //     shader_location: 1,
-                //     format: wgpu::VertexFormat::Float32x3,
-                // },
             ],
         }
     }
@@ -134,10 +135,37 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
+        let uniforms = Uniforms {
+            width: config.width as f32,
+            height: config.height as f32,
+            time: 0.0,
+            speed: 1.0,
+        };
+
+        let uniforms_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Uniforms Buffer"),
+            contents: bytemuck::cast_slice(&[uniforms]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let uniforms_bind_group_layout = Uniforms::bind_group_layout(&device);
+
+        let uniforms_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &uniforms_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: uniforms_buffer.as_entire_binding(),
+                    }
+                ],
+                label: Some("uniforms_bind_group")
+            });
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render pipeline layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&uniforms_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -188,6 +216,7 @@ impl State {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+
         Self {
             window,
             surface,
@@ -200,6 +229,9 @@ impl State {
             index_buffer,
             num_vertices: VERTICES.len() as u32,
             num_indices: INDICES.len() as u32,
+            uniforms,
+            uniforms_buffer,
+            uniforms_bind_group
         }
     }
 
@@ -220,7 +252,11 @@ impl State {
         false
     }
 
-    fn update(&self) {}
+    fn update(&mut self) {
+        self.uniforms.tick_time();
+        self.uniforms.update_size(&self.config);
+        self.queue.write_buffer(&self.uniforms_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
+    }
 
     fn render(&self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
@@ -254,6 +290,7 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, &self.uniforms_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);

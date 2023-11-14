@@ -18,18 +18,37 @@ fn vs_main(
     return out;
 }
 
-fn srgb(color: vec4<f32>) -> vec4<f32> {
+fn srgb(r: f32, g: f32, b: f32, a: f32) -> vec4<f32> {
     return vec4<f32>(
-        pow(((color.r + 0.055) / 1.055), 2.4),
-        pow(((color.g + 0.055) / 1.055), 2.4),
-        pow(((color.b + 0.055) / 1.055), 2.4),
-        pow(((color.a + 0.055) / 1.055), 2.4),
+        pow(((r + 0.055) / 1.055), 2.4),
+        pow(((g + 0.055) / 1.055), 2.4),
+        pow(((b + 0.055) / 1.055), 2.4),
+        pow(((a + 0.055) / 1.055), 2.4),
     );
 }
 
+struct Uniforms {
+    height: f32, // The screen height (px)
+    width: f32, // The screen width (px)
+    time: f32,
+    speed: f32,
+}
+
+@group(0) @binding(0)
+var<uniform> uniforms: Uniforms;
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let aspect_ratio = uniforms.height / uniforms.width;
     var uv: vec2<f32> = in.frag_position.xy;
+    uv.x *= aspect_ratio;
+
+    var col = vec3<f32>();
+
+    var d = length(uv);
+    d = sin(d*8. + uniforms.time) / 8.;
+    d = abs(d);
+    d = .02 / d;
     
-    return srgb(vec4<f32>(uv, 0.0, 1.0));
+    return srgb(d, d, d, 1.0);
 }
